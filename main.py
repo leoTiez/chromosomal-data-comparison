@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -29,10 +30,9 @@ def cross_corr(x, y, num_lags):
     return corr
 
 
-def main():
-    calc_per_transcript = False
-    plot_transcription_diffs = False
-    use_pos_test = True
+def main_own():
+    save_plots = True
+    save_prefix = 'own_data_comparison'
     step_size = 0.01
     explication_tresh = 0.9
 
@@ -40,14 +40,133 @@ def main():
         name='TSS_TES_steinmetz_jacquier.mRNA.bed',
         rel_path='data/own/reference'
     )
-    own_t0_1 = dh.load_big_file(
-        name='L3_41_UV3b_CPD_T0.BOWTIE.SacCer3.pe.bin1.RPM.rmdup.bamCoverage.bw',
-        rel_path='data/own/GenomeCoverage'
+
+    own_nouv_l3 = dh.load_big_file(
+        name='L3_31_UV4_CPD_noUV.BOWTIE.SacCer3.pe.bin1.RPM.bamCoverage.bw',
+        rel_path='data/own/L3'
     )
-    own_t0_2 = dh.load_big_file(
+    own_t0_1_l3 = dh.load_big_file(
         name='L3_41_UV3b_CPD_T0.BOWTIE.SacCer3.pe.bin1.RPM.rmdup.bamCoverage.bw',
-        rel_path='data/own/GenomeCoverage'
+        rel_path='data/own/L3'
     )
+
+    own_nouv_l8 = dh.load_big_file(
+        name='L8_26_TDM2_CPD_noUV.BOWTIE.saccer3.bin1.RPM.bamCoverage.bw',
+        rel_path='data/own/L8'
+    )
+    own_t0_l8 = dh.load_big_file(
+        name='L8_27_TDM2_CPD_T0.BOWTIE.saccer3.bin1.RPM.rmdup.bamCoverage.bw',
+        rel_path='data/own/L8'
+    )
+
+    gen_mapping, means, stds, all_values = dh.normalise_over_annotation(
+        [own_nouv_l3, own_t0_1_l3, own_nouv_l8, own_t0_l8],
+        own_bed,
+        smoothing=[None, None, None, None]
+    )
+
+    total_diffs_l3 = np.abs(all_values[0] - all_values[1])
+    total_diffs_l8 = np.abs(all_values[2] - all_values[3])
+    total_diffs_l3_l2 = np.abs(all_values[1] - all_values[3])
+
+    ratios_total_l3 = []
+    ratios_total_l8 = []
+    ratios_total_l3_l8 = []
+    for thresh in np.arange(0, 1., step_size):
+        ratios_total_l3.append((np.asarray(total_diffs_l3) < thresh).sum() / float(len(total_diffs_l3)))
+        ratios_total_l8.append((np.asarray(total_diffs_l8) < thresh).sum() / float(len(total_diffs_l8)))
+        ratios_total_l3_l8.append((np.asarray(total_diffs_l3_l2) < thresh).sum() / float(len(total_diffs_l3_l2)))
+
+    plt.plot(np.arange(0, 1., step_size), ratios_total_l3, label='Differences below the threshold L3')
+    plt.plot(np.arange(0, 1., step_size), ratios_total_l8, label='Differences below the threshold L8')
+    plt.plot(np.arange(0, 1., step_size), ratios_total_l3_l8, label='Differences below the threshold T0 L3-L8')
+    plt.plot(
+        np.arange(0, 1., step_size),
+        np.repeat(explication_tresh, len(ratios_total_l3)),
+        label='Minimum similarity'
+    )
+
+    plt.legend()
+    if not save_plots:
+        plt.show()
+    else:
+        curr_dir = os.getcwd()
+        plt.savefig('%s/plots/%s_total_diff.png' % (curr_dir, save_prefix))
+        plt.clf()
+
+    mse_l3 = cross_mse(all_values[0], all_values[1], num_lags=100)
+    mse_l8 = cross_mse(all_values[2], all_values[3], num_lags=100)
+    mse_l3_l8 = cross_mse(all_values[1], all_values[3], num_lags=100)
+
+    plt.plot(np.arange(-mse_l3.size / 2., mse_l3.size / 2.), mse_l3, label='L3')
+    plt.plot(np.arange(-mse_l8.size / 2., mse_l8.size / 2.), mse_l8, label='L8')
+    plt.plot(np.arange(-mse_l3_l8.size / 2., mse_l3_l8.size / 2.), mse_l3_l8, label='L3 and L8')
+    plt.title('MSE as a function of shift $\\tau$')
+    plt.xlabel('$\\tau$')
+    plt.ylabel('MSE')
+    plt.legend()
+    if not save_plots:
+        plt.show()
+    else:
+        curr_dir = os.getcwd()
+        plt.savefig('%s/plots/%s_cross_mse.png' % (curr_dir, save_prefix))
+        plt.clf()
+
+    corr_l3 = cross_corr(all_values[0], all_values[1], num_lags=100)
+    corr_l8 = cross_corr(all_values[1], all_values[3], num_lags=100)
+    corr_l3_l8 = cross_corr(all_values[1], all_values[3], num_lags=100)
+    plt.plot(np.arange(-corr_l3.size / 2., corr_l3.size / 2.), corr_l3, label='L3')
+    plt.plot(np.arange(-corr_l8.size / 2., corr_l8.size / 2.), corr_l8, label='L8')
+    plt.plot(np.arange(-corr_l3_l8.size / 2., corr_l3_l8.size / 2.), corr_l3_l8, label='L3 and L8')
+    plt.title('Cross-correlation as a function of shift $\\tau$')
+    plt.xlabel('$\\tau$')
+    plt.ylabel('Cross-correlation')
+    plt.legend()
+    if not save_plots:
+        plt.show()
+    else:
+        curr_dir = os.getcwd()
+        plt.savefig('%s/plots/%s_cross_corr.png' % (curr_dir, save_prefix))
+        plt.clf()
+
+
+def main():
+    calc_per_transcript = False
+    plot_transcription_diffs = False
+    use_pos_test = False
+    save_plots = False
+    save_prefix = 'l3_l8_comparison'
+    step_size = 0.01
+    explication_tresh = 0.9
+
+    own_bed = dh.load_bam_bed_file(
+        name='TSS_TES_steinmetz_jacquier.mRNA.bed',
+        rel_path='data/own/reference'
+    )
+
+    own_nouv_l3 = dh.load_big_file(
+        name='L3_31_UV4_CPD_noUV.BOWTIE.SacCer3.pe.bin1.RPM.bamCoverage.bw',
+        rel_path='data/own/L3'
+    )
+
+    own_t0_1_l3 = dh.load_big_file(
+        name='L3_41_UV3b_CPD_T0.BOWTIE.SacCer3.pe.bin1.RPM.rmdup.bamCoverage.bw',
+        rel_path='data/own/L3'
+    )
+    own_t0_2_l3 = dh.load_big_file(
+        name='L3_41_UV3b_CPD_T0.BOWTIE.SacCer3.pe.bin1.RPM.rmdup.bamCoverage.bw',
+        rel_path='data/own/L3'
+    )
+
+    own_nouv_l8 = dh.load_big_file(
+        name='L8_26_TDM2_CPD_noUV.BOWTIE.saccer3.bin1.RPM.rmdup.bamCoverage.bw',
+        rel_path='data/own/L8'
+    )
+    own_t0_l8 = dh.load_big_file(
+        name='L8_27_TDM2_CPD_T0.BOWTIE.saccer3.bin1.RPM.rmdup.bamCoverage.bw',
+        rel_path='data/own/L8'
+    )
+
     ref_t0_min = dh.load_big_file(
         name='GSM2109560_UV_0hr_A2_dipy_bkgd_minus.bw',
         rel_path='data/reference_chromosomal_landscape'
@@ -59,13 +178,13 @@ def main():
 
     if not use_pos_test:
         gen_mapping, means, stds, all_values = dh.normalise_over_annotation(
-            [own_t0_1, ref_t0_min, ref_t0_plus],
+            [own_t0_1_l3, ref_t0_min, ref_t0_plus],
             own_bed,
             smoothing=[None, 200, 200]
         )
     else:
         gen_mapping, means, stds, all_values = dh.normalise_over_annotation(
-            [own_t0_1, own_t0_2],
+            [own_t0_1_l3, own_t0_l8],
             own_bed,
             smoothing=[None, None]
         )
@@ -76,7 +195,7 @@ def main():
     if calc_per_transcript:
         zipped = zip(gen_mapping[0], gen_mapping[1], gen_mapping[2]) \
             if not use_pos_test else zip(gen_mapping[0], gen_mapping[1])
-        for own_gen, ref_gen in zipped:
+        for num, (own_gen, ref_gen) in enumerate(zipped):
             ref_total = (ref_gen[0] + ref_gen[1]) if not use_pos_test else ref_gen
             diff = own_gen - ref_total
             all_diffs_trans.extend(np.abs(diff).tolist())
@@ -98,7 +217,12 @@ def main():
                 axs[1].set_xlabel('$\\tau$')
                 axs[1].set_ylabel('Cross-correlation')
 
-                plt.show()
+                if not save_plots:
+                    plt.show()
+                else:
+                    curr_dir = os.getcwd()
+                    plt.savefig('%s/plots/%s_transcribed_gene_corr_%s.png' % (curr_dir, save_prefix, num))
+                    plt.clf()
 
     total_diffs = np.abs(own_data - reference_data)
 
@@ -114,7 +238,7 @@ def main():
         min_thresh_trans = np.arange(0, 1., step_size)[np.asarray(ratios_trans) >= explication_tresh][0]
 
     num_subplots = 2 if calc_per_transcript else 1
-    fig, axs = plt.subplots(1, num_subplots, figsize=(10, 20))
+    fig, axs = plt.subplots(1, num_subplots)
     ax = axs[0] if calc_per_transcript else axs
 
     ax.plot(np.arange(0, 1., step_size), ratios_total, label='Differences below the threshold')
@@ -123,7 +247,7 @@ def main():
     ax.plot(
         np.arange(0, 1., step_size),
         np.repeat(explication_tresh, len(ratios_total)),
-        label='Minimum for accountability'
+        label='Minimum similarity'
     )
     ax.set_xlabel('Threshold')
     ax.set_ylabel('Ratio within the similarity')
@@ -136,7 +260,7 @@ def main():
         axs[1].plot(
             np.arange(0, 1., step_size),
             np.repeat(explication_tresh, len(ratios_trans)),
-            label='Minimum for accountability'
+            label='Minimum similarity'
         )
         axs[1].set_xticks([0, min_thresh_trans, 1])
         axs[1].set_yticks([0, explication_tresh, 1])
@@ -146,26 +270,39 @@ def main():
         axs[1].get_xticklabels()[1].set_color("red")
         axs[1].get_yticklabels()[1].set_color("red")
 
-    handles, labels = ax.get_legend_handles_labels()
-    fig.legend(handles, labels, loc='lower center')
-    plt.show()
+    plt.legend()
+    if not save_plots:
+        plt.show()
+    else:
+        curr_dir = os.getcwd()
+        plt.savefig('%s/plots/%s_total_diff.png' % (curr_dir, save_prefix))
+        plt.clf()
 
     mse = cross_mse(own_data, reference_data, num_lags=100)
     plt.plot(np.arange(-mse.size / 2., mse.size / 2.), mse)
     plt.title('MSE as a function of shift $\\tau$')
     plt.xlabel('$\\tau$')
     plt.ylabel('MSE')
-    plt.show()
+    if not save_plots:
+        plt.show()
+    else:
+        curr_dir = os.getcwd()
+        plt.savefig('%s/plots/%s_cross_mse.png' % (curr_dir, save_prefix))
+        plt.clf()
 
     corr = cross_corr(own_data, reference_data, num_lags=1000)
     plt.plot(np.arange(-corr.size/2., corr.size/2.), corr)
     plt.title('Cross-correlation as a function of shift $\\tau$')
     plt.xlabel('$\\tau$')
     plt.ylabel('Cross-correlation')
-    plt.show()
+    if not save_plots:
+        plt.show()
+    else:
+        curr_dir = os.getcwd()
+        plt.savefig('%s/plots/%s_cross_corr.png' % (curr_dir, save_prefix))
+        plt.clf()
 
 
 if __name__ == '__main__':
     main()
-
-
+    # main_own()
