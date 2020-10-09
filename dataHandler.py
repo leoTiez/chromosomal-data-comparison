@@ -22,7 +22,7 @@ def load_big_file(name, rel_path='data'):
     return file
 
 
-def normalise_over_annotation(bw_list, bed_ref, smoothing=[None, None, None]):
+def normalise_over_annotation(bw_list, bed_ref, smoothing=None):
     if len(bw_list) == 0:
         raise ValueError('List with bigwig objects must not be empty.')
 
@@ -47,6 +47,8 @@ def normalise_over_annotation(bw_list, bed_ref, smoothing=[None, None, None]):
 
     means = []
     stds = []
+    if smoothing is None:
+        smoothing = np.repeat(None, len(bw_list))
     for num, smooth in enumerate(smoothing):
         all_values[num] = np.asarray(all_values[num])
         if smooth is not None:
