@@ -1,0 +1,6 @@
+numpy>=1.19
+matplotlib>=3.3
+roman>=3.3
+pyBigWig>=0.3
+pybedtools>=0.8
+scipy>=1.5

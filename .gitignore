@@ -1,0 +1,5 @@
+/.idea
+/__pycache__
+/data
+!/data/reference_chromosomal_landscape/*_0hr_*.bw
+/plots
