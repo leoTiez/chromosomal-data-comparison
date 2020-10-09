@@ -32,6 +32,7 @@ def arg_parse(args):
     parser.add_argument('--save_plot', dest='save_plot', action='store_true', help='Should the plots be saved?')
     parser.add_argument('--save_prefix', type=str, help='Prefix that is added to every saved plot to give them '
                                                         'certain identifiers.')
+    parser.add_argument('num_lags', type=int, help='Maximal number of values that the signal is shifted for the MSE')
 
     parsed_args = parser.parse_args(args)
     return parsed_args
@@ -72,8 +73,8 @@ def main():
     arguments = arg_parse(sys.argv[1:])
 
     step = 0.01
-    num_lags = 100
 
+    num_lags = 100 if arguments.num_lags is None else arguments.num_lags
     thresh = 0.9 if arguments.thresh is None else arguments.thresh
     smoothing = [None if x == 'None' else int(x) for x in arguments.smoothing] \
         if arguments.smoothing is not None else None
