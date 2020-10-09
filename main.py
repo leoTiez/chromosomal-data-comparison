@@ -1,8 +1,41 @@
 #!/usr/bin/python3
+import os
+import sys
+import argparse
+
+from itertools import combinations, product
 import numpy as np
+from scipy import stats
 import matplotlib.pyplot as plt
 
 import dataHandler as dh
+
+
+def arg_parse(args):
+    parser = argparse.ArgumentParser(description='Pass parameters for comparing 2 or more'
+                                                 ' sequencing data sets with each other.')
+    parser.add_argument(
+        '--input_data',
+        '-i',
+        action='append',
+        required=True,
+        help='List with input sequencing signals as a '
+             'relative path to your current directory.',
+        type=str)
+    parser.add_argument('--name', '-n', action='append', type=str, help='Names fo the data sets')
+    parser.add_argument('--smoothing', action='append', type=int, help='Smoothing values for ')
+    parser.add_argument('--bed', type=str, help='Bed file for fragmentation of sequencing data as a relative path'
+                                                'to your current directory.', required=True)
+    parser.add_argument('--thresh', type=float, help='Ratio of data that must not exceed a certain distance distance to'
+                                                     'the reference signal that is at least required to treat them'
+                                                     'as being essentially the same.')
+    parser.add_argument('--save_plot', dest='save_plot', action='store_true', help='Should the plots be saved?')
+    parser.add_argument('--save_prefix', type=str, help='Prefix that is added to every saved plot to give them '
+                                                        'certain identifiers.')
+    parser.add_argument('num_lags', type=int, help='Maximal number of values that the signal is shifted for the MSE')
+
+    parsed_args = parser.parse_args(args)
+    return parsed_args
 
 
 def cross_mse(x, y, num_lags):
@@ -29,143 +62,116 @@ def cross_corr(x, y, num_lags):
     return corr
 
 
+def kolmogorow_smirnow(x, y):
+    cdf_x = stats.norm.cdf(x)
+    cdf_y = stats.norm.cdf(y)
+
+    return stats.ks_2samp(cdf_x, cdf_y)
+
+
 def main():
-    calc_per_transcript = False
-    plot_transcription_diffs = False
-    use_pos_test = True
-    step_size = 0.01
-    explication_tresh = 0.9
+    arguments = arg_parse(sys.argv[1:])
 
-    own_bed = dh.load_bam_bed_file(
-        name='TSS_TES_steinmetz_jacquier.mRNA.bed',
-        rel_path='data/own/reference'
-    )
-    own_t0_1 = dh.load_big_file(
-        name='L3_41_UV3b_CPD_T0.BOWTIE.SacCer3.pe.bin1.RPM.rmdup.bamCoverage.bw',
-        rel_path='data/own/GenomeCoverage'
-    )
-    own_t0_2 = dh.load_big_file(
-        name='L3_41_UV3b_CPD_T0.BOWTIE.SacCer3.pe.bin1.RPM.rmdup.bamCoverage.bw',
-        rel_path='data/own/GenomeCoverage'
-    )
-    ref_t0_min = dh.load_big_file(
-        name='GSM2109560_UV_0hr_A2_dipy_bkgd_minus.bw',
-        rel_path='data/reference_chromosomal_landscape'
-    )
-    ref_t0_plus = dh.load_big_file(
-        name='GSM2109560_UV_0hr_A2_dipy_bkgd_plus.bw',
-        rel_path='data/reference_chromosomal_landscape'
+    step = 0.01
+
+    num_lags = 100 if arguments.num_lags is None else arguments.num_lags
+    thresh = 0.9 if arguments.thresh is None else arguments.thresh
+    smoothing = [None if x == 'None' else int(x) for x in arguments.smoothing] \
+        if arguments.smoothing is not None else None
+    save_plots = False if arguments.save_plot is None else arguments.save_plot
+    save_prefix = '' if arguments.save_prefix is None else arguments.save_prefix
+    names = list(range(len(arguments.input_data))) if arguments.name is None else arguments.name
+
+    bed = dh.load_bam_bed_file(
+        name=arguments.bed,
+        rel_path=''
     )
 
-    if not use_pos_test:
-        gen_mapping, means, stds, all_values = dh.normalise_over_annotation(
-            [own_t0_1, ref_t0_min, ref_t0_plus],
-            own_bed,
-            smoothing=[None, 200, 200]
+    bw_files = []
+    for file_path in arguments.input_data:
+        bw_files.append(
+            dh.load_big_file(
+                name=file_path,
+                rel_path=''
+            )
         )
+
+    gen_mapping, means, stds, all_values = dh.normalise_over_annotation(
+        bw_files,
+        bed,
+        smoothing=smoothing
+    )
+
+    thresh_list = []
+    mse_list = []
+    mse_centre_list = []
+    ks_list = []
+
+    prod = list(combinations(range(len(all_values)), 2))
+    for org, refer in prod:
+        diff = np.abs(all_values[org] - all_values[refer])
+        thresh_list.append([(np.asarray(diff) < theta).sum() / float(len(diff)) for theta in np.arange(0, 1, step)])
+        mse = cross_mse(all_values[org], all_values[refer], num_lags=num_lags)
+        mse_list.append(mse)
+        d, _ = kolmogorow_smirnow(all_values[org], all_values[refer])
+        ks_list.append(d)
+        mse_centre_list.append(mse[num_lags])
+
+    fig_diff, ax_diff = plt.subplots(figsize=(10, 5))
+    fig_mse, ax_mse = plt.subplots(figsize=(10, 5))
+    for diff_thresh, mse, (org, ref) in zip(thresh_list, mse_list, prod):
+        ax_diff.plot(np.arange(0, 1, step), diff_thresh, label='Comparison\n%s, %s' % (names[org], names[ref]))
+        ax_mse.plot(np.arange(-len(mse)/2., len(mse)/2.), mse, label='Comparison\n%s, %s' % (names[org], names[ref]))
+
+    ax_diff.plot(
+        np.arange(0, 1, step),
+        np.repeat(thresh, len(thresh_list[0])),
+        label='Minimum similarity'
+    )
+    ax_diff.set_title('Ratio of the data that differs maximal by $\\theta$')
+    ax_diff.set_xlabel('$\\theta$')
+    ax_diff.set_ylabel('Ratio')
+    box = ax_diff.get_position()
+    ax_diff.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+    ax_diff.legend(title='Legend', bbox_to_anchor=(1.05, 1))
+    fig_diff.tight_layout(rect=[0, 0, 0.85, 1])
+
+    ax_mse.set_title('MSE as a function of shift $\\tau$')
+    ax_mse.set_xlabel('$\\tau$')
+    ax_mse.set_ylabel('MSE')
+    box = ax_mse.get_position()
+    ax_mse.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+    ax_mse.legend(title='Legend', bbox_to_anchor=(1.05, 1))
+    fig_mse.tight_layout(rect=[0, 0, 0.85, 1])
+
+    fig_heat, ax_heat = plt.subplots()
+    heatmap = np.zeros((len(all_values), len(all_values)))
+    mask_tri = np.triu(np.ones(heatmap.shape, dtype=bool))
+    heatmap[np.logical_and(mask_tri, ~np.eye(heatmap.shape[0], dtype=bool))] = np.asarray(ks_list)
+    heatmap.T[np.logical_and(mask_tri, ~np.eye(heatmap.shape[0], dtype=bool))] = np.asarray(ks_list)
+    heat_plt = ax_heat.imshow(heatmap, cmap='seismic')
+    ax_heat.set_xticks(np.arange(len(names)))
+    ax_heat.set_yticks(np.arange(len(names)))
+    ax_heat.set_xticklabels(names)
+    ax_heat.set_yticklabels(names)
+    fig_heat.colorbar(heat_plt)
+    plt.setp(ax_heat.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+
+    for r, c in product(range(heatmap.shape[0]), range(heatmap.shape[1])):
+        text = ax_heat.text(r, c, "%.2f" % heatmap[r, c], ha="center", va="center", color="w")
+
+    ax_heat.set_title("KS Heatmap")
+    fig_heat.tight_layout()
+
+    if not save_plots:
+        plt.show()
     else:
-        gen_mapping, means, stds, all_values = dh.normalise_over_annotation(
-            [own_t0_1, own_t0_2],
-            own_bed,
-            smoothing=[None, None]
-        )
-
-    own_data = all_values[0]
-    reference_data = all_values[1] + all_values[2] if not use_pos_test else all_values[1]
-    all_diffs_trans = []
-    if calc_per_transcript:
-        zipped = zip(gen_mapping[0], gen_mapping[1], gen_mapping[2]) \
-            if not use_pos_test else zip(gen_mapping[0], gen_mapping[1])
-        for own_gen, ref_gen in zipped:
-            ref_total = (ref_gen[0] + ref_gen[1]) if not use_pos_test else ref_gen
-            diff = own_gen - ref_total
-            all_diffs_trans.extend(np.abs(diff).tolist())
-            corr = cross_corr(own_gen, ref_total, num_lags=200)
-
-            if plot_transcription_diffs:
-                fig, axs = plt.subplots(2, 1)
-                fig.tight_layout(h_pad=2.0)
-                axs[0].plot(range(own_gen.size), own_gen, label='Own gene')
-                # axs[0].plot(range(ref_gen_m.size), ref_gen_m, label='Reference gene -')
-                # axs[0].plot(range(ref_gen_p.size), ref_gen_p, label='Reference gene +')
-                axs[0].plot(range(ref_total.size), ref_total, label='Reference gene total')
-                axs[0].set_xlabel('Position')
-                axs[0].set_ylabel('Normalised data value')
-                axs[0].legend()
-
-                axs[1].plot(np.arange(-corr.size / 2., corr.size / 2.), corr)
-                axs[1].set_title('Cross-correlation as a function of shift $\\tau$')
-                axs[1].set_xlabel('$\\tau$')
-                axs[1].set_ylabel('Cross-correlation')
-
-                plt.show()
-
-    total_diffs = np.abs(own_data - reference_data)
-
-    ratios_trans = []
-    ratios_total = []
-    for thresh in np.arange(0, 1., step_size):
-        ratios_total.append((np.asarray(total_diffs) < thresh).sum() / float(len(total_diffs)))
-        if calc_per_transcript:
-            ratios_trans.append((np.asarray(all_diffs_trans) < thresh).sum() / float(len(all_diffs_trans)))
-
-    min_thresh_total = np.arange(0, 1., step_size)[np.asarray(ratios_total) >= explication_tresh][0]
-    if calc_per_transcript:
-        min_thresh_trans = np.arange(0, 1., step_size)[np.asarray(ratios_trans) >= explication_tresh][0]
-
-    num_subplots = 2 if calc_per_transcript else 1
-    fig, axs = plt.subplots(1, num_subplots, figsize=(10, 20))
-    ax = axs[0] if calc_per_transcript else axs
-
-    ax.plot(np.arange(0, 1., step_size), ratios_total, label='Differences below the threshold')
-    ax.set_xticks([0, min_thresh_total, 1])
-    ax.set_yticks([0, explication_tresh, 1])
-    ax.plot(
-        np.arange(0, 1., step_size),
-        np.repeat(explication_tresh, len(ratios_total)),
-        label='Minimum for accountability'
-    )
-    ax.set_xlabel('Threshold')
-    ax.set_ylabel('Ratio within the similarity')
-    ax.set_title('Ratio of all differences that are closer\nthan the defined threshold')
-    ax.get_xticklabels()[1].set_color("red")
-    ax.get_yticklabels()[1].set_color("red")
-
-    if calc_per_transcript:
-        axs[1].plot(np.arange(0, 1., step_size), ratios_trans, label='Differences below the threshold')
-        axs[1].plot(
-            np.arange(0, 1., step_size),
-            np.repeat(explication_tresh, len(ratios_trans)),
-            label='Minimum for accountability'
-        )
-        axs[1].set_xticks([0, min_thresh_trans, 1])
-        axs[1].set_yticks([0, explication_tresh, 1])
-        axs[1].set_xlabel('Threshold')
-        axs[1].set_ylabel('Ratio within the similarity')
-        axs[1].set_title('Ratio of the differences for transcribed genes\nthat are closer than the defined threshold')
-        axs[1].get_xticklabels()[1].set_color("red")
-        axs[1].get_yticklabels()[1].set_color("red")
-
-    handles, labels = ax.get_legend_handles_labels()
-    fig.legend(handles, labels, loc='lower center')
-    plt.show()
-
-    mse = cross_mse(own_data, reference_data, num_lags=100)
-    plt.plot(np.arange(-mse.size / 2., mse.size / 2.), mse)
-    plt.title('MSE as a function of shift $\\tau$')
-    plt.xlabel('$\\tau$')
-    plt.ylabel('MSE')
-    plt.show()
-
-    corr = cross_corr(own_data, reference_data, num_lags=1000)
-    plt.plot(np.arange(-corr.size/2., corr.size/2.), corr)
-    plt.title('Cross-correlation as a function of shift $\\tau$')
-    plt.xlabel('$\\tau$')
-    plt.ylabel('Cross-correlation')
-    plt.show()
+        curr_dir = os.getcwd()
+        fig_diff.savefig('%s/%s_diff.png' % (curr_dir, save_prefix))
+        fig_mse.savefig('%s/%s_mse.png' % (curr_dir, save_prefix))
+        fig_heat.savefig('%s/%s_heat.png' % (curr_dir, save_prefix))
+        plt.clf()
 
 
 if __name__ == '__main__':
     main()
-
-
