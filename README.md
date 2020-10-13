@@ -12,7 +12,7 @@ You need to have the following requirements installed
 ## Installation
 To install the necessary python libraries, run
 ```bash
-pip3 install -r requirements
+python3 -m pip install -r requirements
 ```
 
 ## Execution
