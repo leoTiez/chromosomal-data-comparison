@@ -8,7 +8,7 @@ import numpy as np
 from scipy import stats
 import matplotlib.pyplot as plt
 
-import dataHandler as dh
+import seqDataHandler as dh
 
 
 def arg_parse(args):
