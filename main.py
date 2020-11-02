@@ -32,7 +32,7 @@ def arg_parse(args):
     parser.add_argument('--save_plot', dest='save_plot', action='store_true', help='Should the plots be saved?')
     parser.add_argument('--save_prefix', type=str, help='Prefix that is added to every saved plot to give them '
                                                         'certain identifiers.')
-    parser.add_argument('num_lags', type=int, help='Maximal number of values that the signal is shifted for the MSE')
+    parser.add_argument('--num_lags', type=int, help='Maximal number of values that the signal is shifted for the MSE')
 
     parsed_args = parser.parse_args(args)
     return parsed_args
@@ -96,7 +96,7 @@ def main():
             )
         )
 
-    gen_mapping, means, stds, all_values = dh.normalise_over_annotation(
+    gen_mapping, means, stds, all_values, _ = dh.normalise_over_annotation(
         bw_files,
         bed,
         smoothing=smoothing
