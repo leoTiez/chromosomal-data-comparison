@@ -47,7 +47,9 @@ python3 main.py --bed=file/path -i=file/path [-i=more/file/paths] [-n="YOUR NAME
 All paths must be relative to your current directory.
 
 ## R execution
-If you want to run the R script instead to compare the
+The R script creates two plots, the CDF and the probability density function
+and saves them in a PDF in your working directory. 
+If you want to run the R script to compare the
 outcome of the KS-test, execute the following command
 
 ```bash
@@ -57,4 +59,4 @@ Rscript -o [--original_file] file/to/bwFile1 -c [--comparison-file] file/to/bwFi
  - `-o` or `--original_file`: Required. Determines the path to your original bigwig file
  - `-c` or `--comparison_file` Required. Determines the path to the bigwig file you want to compare your original file with
  - `--bin_size`: Optional. Sets the range per bin
- - `--install`: Optional. If set, all necessary libraries are insalled
+ - `--install`: Optional. If set, all necessary libraries are installed
