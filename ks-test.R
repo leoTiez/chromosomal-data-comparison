@@ -8,7 +8,7 @@ option_list = list(
     help='Path to original file', metavar='character'),
   make_option(c('-c', '--comparison_file'), type='character', default=NULL, 
               help='Path to comparison file'),
-  make_option('--bin_size', type='numeric', default=0.5, 
+  make_option('--bin_size', type='numeric', default=0.1, 
               help='Bin size'),
   make_option('--install', action='store_true', default=FALSE, 
               help='Install libraries if passed')
@@ -34,17 +34,17 @@ suppressMessages(library('ggplot2'))
 org_df <- import.bw(opt$original_file)
 ref_df <- import.bw(opt$comparison_file)
 
-org_df <- import.bw(org_file)
-ref_df <- import.bw(comp_file)
-
 org_scores <- score(org_df)
 ref_scores <- score(ref_df)
 
-org_scores <- (org_scores - mean(org_scores)) / sd(org_scores)
-ref_scores <- (ref_scores - mean(ref_scores)) / sd(ref_scores)
+org_scores <- org_scores / max(org_scores)
+org_scores <- org_scores - min(org_scores)
+ref_scores <- ref_scores / max(ref_scores)
+ref_scores <- ref_scores - min(ref_scores)
 
 print('############### KS test w/out binning')
 ks.test(org_scores, ref_scores)
+
 
 # KS based on previously calculated CDF
 uv4_cdf <- ecdf(org_scores)(seq(min(org_scores), max(org_scores), by=opt$bin_size))
@@ -59,8 +59,8 @@ plot(
   col='green'
 )
 lines(
-  seq(min(uv3b_cdf), max(uv3b_cdf), by=0.01),
-  ecdf(ref_scores)(seq(min(uv3b_cdf), max(uv3b_cdf), by=0.01)),
+  seq(min(uv3b_cdf), max(uv3b_cdf), by=opt$bin_size),
+  ecdf(ref_scores)(seq(min(uv3b_cdf), max(uv3b_cdf), by=opt$bin_size)),
   col='blue'
 )
 
