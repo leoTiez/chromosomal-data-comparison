@@ -62,9 +62,16 @@ def cross_corr(x, y, num_lags):
     return corr
 
 
-def kolmogorow_smirnow(x, y):
-    cdf_x = stats.norm.cdf(x)
-    cdf_y = stats.norm.cdf(y)
+def kolmogorow_smirnow(x, y, binning=10):
+    if binning is None:
+        _, binning = np.histogram(x, bins='doane')
+    if type(binning) == int:
+        _, binning = np.histogram(x, bins=binning)
+
+    b_x = np.digitize(x, bins=binning)
+    b_y = np.digitize(y, bins=binning)
+    cdf_x = stats.norm.cdf(b_x)
+    cdf_y = stats.norm.cdf(b_y)
 
     return stats.ks_2samp(cdf_x, cdf_y)
 
@@ -113,8 +120,8 @@ def main():
         thresh_list.append([(np.asarray(diff) < theta).sum() / float(len(diff)) for theta in np.arange(0, 1, step)])
         mse = cross_mse(all_values[org], all_values[refer], num_lags=num_lags)
         mse_list.append(mse)
-        d, _ = kolmogorow_smirnow(all_values[org], all_values[refer])
-        ks_list.append(d)
+        d, p = kolmogorow_smirnow(all_values[org], all_values[refer])
+        ks_list.append(p)
         mse_centre_list.append(mse[num_lags])
 
     fig_diff, ax_diff = plt.subplots(figsize=(10, 5))
@@ -160,7 +167,7 @@ def main():
     for r, c in product(range(heatmap.shape[0]), range(heatmap.shape[1])):
         text = ax_heat.text(r, c, "%.2f" % heatmap[r, c], ha="center", va="center", color="w")
 
-    ax_heat.set_title("KS Heatmap")
+    ax_heat.set_title("KS p-value Heatmap")
     fig_heat.tight_layout()
 
     if not save_plots:
