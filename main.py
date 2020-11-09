@@ -32,7 +32,7 @@ def arg_parse(args):
     parser.add_argument('--save_plot', dest='save_plot', action='store_true', help='Should the plots be saved?')
     parser.add_argument('--save_prefix', type=str, help='Prefix that is added to every saved plot to give them '
                                                         'certain identifiers.')
-    parser.add_argument('num_lags', type=int, help='Maximal number of values that the signal is shifted for the MSE')
+    parser.add_argument('--num_lags', type=int, help='Maximal number of values that the signal is shifted for the MSE')
 
     parsed_args = parser.parse_args(args)
     return parsed_args
@@ -62,9 +62,16 @@ def cross_corr(x, y, num_lags):
     return corr
 
 
-def kolmogorow_smirnow(x, y):
-    cdf_x = stats.norm.cdf(x)
-    cdf_y = stats.norm.cdf(y)
+def kolmogorow_smirnow(x, y, binning=10):
+    if binning is None:
+        _, binning = np.histogram(x, bins='doane')
+    if type(binning) == int:
+        _, binning = np.histogram(x, bins=binning)
+
+    b_x = np.digitize(x, bins=binning)
+    b_y = np.digitize(y, bins=binning)
+    cdf_x = stats.norm.cdf(b_x)
+    cdf_y = stats.norm.cdf(b_y)
 
     return stats.ks_2samp(cdf_x, cdf_y)
 
@@ -96,7 +103,7 @@ def main():
             )
         )
 
-    gen_mapping, means, stds, all_values = dh.normalise_over_annotation(
+    gen_mapping, means, stds, all_values, _ = dh.normalise_over_annotation(
         bw_files,
         bed,
         smoothing=smoothing
@@ -113,8 +120,8 @@ def main():
         thresh_list.append([(np.asarray(diff) < theta).sum() / float(len(diff)) for theta in np.arange(0, 1, step)])
         mse = cross_mse(all_values[org], all_values[refer], num_lags=num_lags)
         mse_list.append(mse)
-        d, _ = kolmogorow_smirnow(all_values[org], all_values[refer])
-        ks_list.append(d)
+        d, p = kolmogorow_smirnow(all_values[org], all_values[refer])
+        ks_list.append(p)
         mse_centre_list.append(mse[num_lags])
 
     fig_diff, ax_diff = plt.subplots(figsize=(10, 5))
@@ -160,7 +167,7 @@ def main():
     for r, c in product(range(heatmap.shape[0]), range(heatmap.shape[1])):
         text = ax_heat.text(r, c, "%.2f" % heatmap[r, c], ha="center", va="center", color="w")
 
-    ax_heat.set_title("KS Heatmap")
+    ax_heat.set_title("KS p-value Heatmap")
     fig_heat.tight_layout()
 
     if not save_plots:
