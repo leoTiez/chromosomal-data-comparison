@@ -50,20 +50,17 @@ ks.test(org_scores, ref_scores)
 uv4_cdf <- ecdf(org_scores)(seq(min(org_scores), max(org_scores), by=opt$bin_size))
 uv3b_cdf <- ecdf(ref_scores)(seq(min(ref_scores), max(ref_scores), by=opt$bin_size))
 
-lower <- max(c(min(org_scores), min(ref_scores)))
-upper <- min(c(max(org_scores), max(ref_scores)))
-
 plot(
-  seq(lower, upper, by=0.01),
-  ecdf(org_scores)(seq(lower, upper, by=0.01)),
+  seq(min(uv4_cdf), max(uv4_cdf), by=opt$bin_size),
+  ecdf(org_scores)(seq(min(uv4_cdf), max(uv4_cdf), by=opt$bin_size)),
   type='l',
   xlab='ChIP Value',
   ylab='CDF',
   col='green'
 )
 lines(
-  seq(lower, upper, by=0.01),
-  ecdf(ref_scores)(seq(lower, upper, by=0.01)),
+  seq(min(uv3b_cdf), max(uv3b_cdf), by=0.01),
+  ecdf(ref_scores)(seq(min(uv3b_cdf), max(uv3b_cdf), by=0.01)),
   col='blue'
 )
 
