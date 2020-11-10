@@ -22,7 +22,12 @@ def arg_parse(args):
         help='List with input sequencing signals as a '
              'relative path to your current directory.',
         type=str)
-    parser.add_argument('--name', '-n', action='append', type=str, help='Names fo the data sets')
+    parser.add_argument('--name', '-n', action='append', type=str, help='Names of the data sets')
+    parser.add_argument('--norm', type=str, help='The applied normalisation method. If parameter is not'
+                                                 'passed, no normalisation is applied. Otherwise choose'
+                                                 'between remap and center. Remap scales data between 0 and 1,'
+                                                 'with 1 being the maximum and 0 the minimum. Center shifts'
+                                                 'the mean to 0 and sets std to 1.')
     parser.add_argument('--smoothing', action='append', type=int, help='Smoothing values for ')
     parser.add_argument('--bed', type=str, help='Bed file for fragmentation of sequencing data as a relative path'
                                                 'to your current directory.', required=True)
@@ -33,6 +38,9 @@ def arg_parse(args):
     parser.add_argument('--save_prefix', type=str, help='Prefix that is added to every saved plot to give them '
                                                         'certain identifiers.')
     parser.add_argument('--num_lags', type=int, help='Maximal number of values that the signal is shifted for the MSE')
+    parser.add_argument('--num_bins', type=int, help='Number of bins used for the KS-test. If no parameter is passed,'
+                                                     'the data is binned according to the doane method (see '
+                                                     'numpy documentation).')
 
     parsed_args = parser.parse_args(args)
     return parsed_args
@@ -88,6 +96,8 @@ def main():
     save_plots = False if arguments.save_plot is None else arguments.save_plot
     save_prefix = '' if arguments.save_prefix is None else arguments.save_prefix
     names = list(range(len(arguments.input_data))) if arguments.name is None else arguments.name
+    normalisation = arguments.norm
+    num_bins = arguments.num_bins
 
     bed = dh.load_bam_bed_file(
         name=arguments.bed,
@@ -103,10 +113,12 @@ def main():
             )
         )
 
+    print('########### Applied normalisation method: %s' % normalisation)
     gen_mapping, means, stds, all_values, _ = dh.normalise_over_annotation(
         bw_files,
         bed,
-        smoothing=smoothing
+        smoothing=smoothing,
+        normalise=normalisation
     )
 
     thresh_list = []
@@ -114,13 +126,16 @@ def main():
     mse_centre_list = []
     ks_list = []
 
+    print('########### Number of lags used: %s' % num_lags)
+    print('########### Used threshold: %s' % thresh)
+    print('########### Number of bins or binning method: %s' % (num_bins if num_bins is not None else'doane'))
     prod = list(combinations(range(len(all_values)), 2))
     for org, refer in prod:
         diff = np.abs(all_values[org] - all_values[refer])
         thresh_list.append([(np.asarray(diff) < theta).sum() / float(len(diff)) for theta in np.arange(0, 1, step)])
         mse = cross_mse(all_values[org], all_values[refer], num_lags=num_lags)
         mse_list.append(mse)
-        d, p = kolmogorow_smirnow(all_values[org], all_values[refer])
+        d, p = kolmogorow_smirnow(all_values[org], all_values[refer], binning=num_bins)
         ks_list.append(p)
         mse_centre_list.append(mse[num_lags])
 
@@ -162,12 +177,12 @@ def main():
     ax_heat.set_xticklabels(names)
     ax_heat.set_yticklabels(names)
     fig_heat.colorbar(heat_plt)
-    plt.setp(ax_heat.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+    plt.setp(ax_heat.get_xticklabels(), rotation=45, ha='right', rotation_mode='anchor')
 
     for r, c in product(range(heatmap.shape[0]), range(heatmap.shape[1])):
-        text = ax_heat.text(r, c, "%.2f" % heatmap[r, c], ha="center", va="center", color="w")
+        text = ax_heat.text(r, c, '%.2f' % heatmap[r, c], ha='center', va='center', color='w')
 
-    ax_heat.set_title("KS p-value Heatmap")
+    ax_heat.set_title('KS p-value Heatmap')
     fig_heat.tight_layout()
 
     if not save_plots:
