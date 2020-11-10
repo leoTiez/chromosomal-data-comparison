@@ -1,8 +1,18 @@
 # Comparison of chromosomal data
 
-This program compares your own data with the
-a reference data set that is produced by
-Wyrick et al. 2016
+This program is designed to provide different metrics
+to compare similarity or dissimilarity of ChIP-seq data. 
+Applied measurements are thresholding (how large does a tolerated
+error margin need to be in order to account for k% of the data); mean squared
+error (MSE); and KS-testing. Note that if you want to compare the
+ChIP-seq signal of the whole genome, the calculated p-values will
+be (close to) zero. In this case, binning is recommended.
+
+
+There are two scripts: one Python script, one Rscript. The Python script
+is recommended to use as it provides more flexibility. However, the Rscript
+gives the possibility to compare the outcome of the KS-test with 
+another implementation to rule out numerical issues.
 
 ## Requirements 
 You need to have the following requirements installed
@@ -33,7 +43,7 @@ python3 -m pip install -r requirements
 Execute the file via
                                                         
 ```
-python3 main.py --bed=file/path -i=file/path [-i=more/file/paths] [-n="YOUR NAME" [-name="More names matching input"]] [--smoothing=200 [--smoothing=None]] [--thresh=0.95] [--save_plot] [--save_prefix='Your_prefix'] [--num_lags=150]
+python3 main.py --bed=file/path -i=file/path [-i=more/file/paths] [-n="YOUR NAME" [-name="More names matching input"]] [--smoothing=200 [--smoothing=None]] [--thresh=0.95] [--save_plot] [--save_prefix='Your_prefix'] [--num_lags=150] [--norm=remap] [--num_bins=10]
 ```
 - `--bed`: Required: Path to the bed file.
 - `--input_data``-i`: Required. Path to input file. Add more inputs via more `-i=next/file` or `--input_data=next/file`
@@ -43,6 +53,10 @@ python3 main.py --bed=file/path -i=file/path [-i=more/file/paths] [-n="YOUR NAME
 - `--save_plot`: Optional. Flag is set when the plots are to be saved
 - `--save_prefix`: Optional. Set a prefix for the saved plots as an identifier. Not used if `--save_plot` is not set
 - `--num_lags`: Optional. Maximal number of values that the signal is shifted for the MSE. Default is 100.
+- `--norm`: Optional. The normalisation method that is used. If none is passed, no normalisation is applied. Otherwise 
+set it to `center` for zero mean and std of one, or `remap` for rescaling values between 0 and 1
+- `--num_bins`: the number of bins that are used for the KS-test. If none is passed, the `doane` binning method is applied
+(see numpy documentation). Otherwise you can pass any positive integer value.
 
 All paths must be relative to your current directory.
 
@@ -53,10 +67,12 @@ If you want to run the R script to compare the
 outcome of the KS-test, execute the following command
 
 ```bash
-Rscript -o [--original_file] file/to/bwFile1 -c [--comparison-file] file/to/bwFile2 [--bin_size 0.1] [--install]
+Rscript -o [--original_file] file/to/bwFile1 -c [--comparison-file] file/to/bwFile2 [--bin_size 0.1] [--install] [-n [--normalise] remap]
 ```
  where 
  - `-o` or `--original_file`: Required. Determines the path to your original bigwig file
  - `-c` or `--comparison_file` Required. Determines the path to the bigwig file you want to compare your original file with
  - `--bin_size`: Optional. Sets the range per bin
  - `--install`: Optional. If set, all necessary libraries are installed
+ - `-n` or `--normalise`: Optional. If not passed, no normalisation method is applied. Otherwise, choose between `remap` 
+ (rescaling the data between 0 and 1), or `center` (zero mean and std of 1)
