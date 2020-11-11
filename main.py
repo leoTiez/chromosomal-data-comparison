@@ -8,7 +8,7 @@ import numpy as np
 from scipy import stats
 import matplotlib.pyplot as plt
 
-import seqDataHandler as dh
+from datahandler import reader, seqDataHandler
 
 
 def arg_parse(args):
@@ -29,8 +29,6 @@ def arg_parse(args):
                                                  'with 1 being the maximum and 0 the minimum. Center shifts'
                                                  'the mean to 0 and sets std to 1.')
     parser.add_argument('--smoothing', action='append', type=int, help='Smoothing values for ')
-    parser.add_argument('--bed', type=str, help='Bed file for fragmentation of sequencing data as a relative path'
-                                                'to your current directory.', required=True)
     parser.add_argument('--thresh', type=float, help='Ratio of data that must not exceed a certain distance distance to'
                                                      'the reference signal that is at least required to treat them'
                                                      'as being essentially the same.')
@@ -99,27 +97,30 @@ def main():
     normalisation = arguments.norm
     num_bins = arguments.num_bins
 
-    bed = dh.load_bam_bed_file(
-        name=arguments.bed,
-        rel_path=''
-    )
-
     bw_files = []
     for file_path in arguments.input_data:
         bw_files.append(
-            dh.load_big_file(
+            reader.load_big_file(
                 name=file_path,
                 rel_path=''
             )
         )
 
     print('########### Applied normalisation method: %s' % normalisation)
-    gen_mapping, means, stds, all_values, _ = dh.normalise_over_annotation(
-        bw_files,
-        bed,
-        smoothing=smoothing,
-        normalise=normalisation
-    )
+    all_values, chrom_start = seqDataHandler.get_values(bw_list=bw_files)
+    if normalisation is not None:
+        if normalisation.lower() == 'remap':
+            print('########### Apply remap normalisation')
+            all_values = seqDataHandler.remap_norm_all(all_values)
+        elif normalisation.lower() == 'center':
+            print('########### Apply center normalisation')
+            all_values = seqDataHandler.center_norm_all(all_values)
+        else:
+            raise ValueError('Invalid normalisation method selected. Use remap or center or do not '
+                             'pass anything')
+    if smoothing is not None:
+        print('########### Apply smoothing')
+        all_values = seqDataHandler.smooth_all(all_values, smooth_list=smoothing)
 
     thresh_list = []
     mse_list = []
