@@ -43,9 +43,8 @@ python3 -m pip install -r requirements
 Execute the file via
                                                         
 ```
-python3 main.py --bed=file/path -i=file/path [-i=more/file/paths] [-n="YOUR NAME" [-name="More names matching input"]] [--smoothing=200 [--smoothing=None]] [--thresh=0.95] [--save_plot] [--save_prefix='Your_prefix'] [--num_lags=150] [--norm=remap] [--num_bins=10]
+python3 main.py -i=file/path [-i=more/file/paths] [-n="YOUR NAME" [-name="More names matching input"]] [--smoothing=200 [--smoothing=None]] [--thresh=0.95] [--save_plot] [--save_prefix='Your_prefix'] [--num_lags=150] [--norm=remap] [--num_bins=10]
 ```
-- `--bed`: Required: Path to the bed file.
 - `--input_data``-i`: Required. Path to input file. Add more inputs via more `-i=next/file` or `--input_data=next/file`
 - `--name` `-n`: Optional. Names for creating better plots. Otherwise numbers are used. Add more names via `--name="Next Name"` or `-n="Next Name"`. Note that the number of names (if passed) must match the number of inputs
 - `--smoothing`: Optional. Number of values that are used for smoothing. None per default (not applied). Add more smoothing factors via `--smoothing=200` where 200 is replaced by your value. Note that the number of smoothing factors (if passed) must match the number of input data.
