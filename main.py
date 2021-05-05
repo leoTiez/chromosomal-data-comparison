@@ -2,6 +2,7 @@
 import os
 import sys
 import argparse
+import multiprocessing
 
 from itertools import combinations, product
 import numpy as np
@@ -11,34 +12,40 @@ import matplotlib.pyplot as plt
 from datahandler import reader, seqDataHandler
 
 
+def print_status(per):
+    sys.stdout.write('\r')
+    sys.stdout.write("[%-100s] %d%%" % ('=' * int(per), per))
+    sys.stdout.flush()
+
+
 def arg_parse(args):
     parser = argparse.ArgumentParser(description='Pass parameters for comparing 2 or more'
                                                  ' sequencing data sets with each other.')
-    parser.add_argument(
-        '--input_data',
-        '-i',
-        action='append',
-        required=True,
-        help='List with input sequencing signals as a '
-             'relative path to your current directory.',
-        type=str)
-    parser.add_argument('--name', '-n', action='append', type=str, help='Names of the data sets')
-    parser.add_argument('--norm', type=str, help='The applied normalisation method. If parameter is not'
-                                                 'passed, no normalisation is applied. Otherwise choose'
-                                                 'between remap and center. Remap scales data between 0 and 1,'
-                                                 'with 1 being the maximum and 0 the minimum. Center shifts'
-                                                 'the mean to 0 and sets std to 1.')
-    parser.add_argument('--smoothing', action='append', type=int, help='Smoothing values for ')
-    parser.add_argument('--thresh', type=float, help='Ratio of data that must not exceed a certain distance distance to'
-                                                     'the reference signal that is at least required to treat them'
-                                                     'as being essentially the same.')
-    parser.add_argument('--save_plot', dest='save_plot', action='store_true', help='Should the plots be saved?')
-    parser.add_argument('--save_prefix', type=str, help='Prefix that is added to every saved plot to give them '
-                                                        'certain identifiers.')
-    parser.add_argument('--num_lags', type=int, help='Maximal number of values that the signal is shifted for the MSE')
-    parser.add_argument('--num_bins', type=int, help='Number of bins used for the KS-test. If no parameter is passed,'
-                                                     'the data is binned according to the doane method (see '
-                                                     'numpy documentation).')
+    parser.add_argument('--input_data', '-i', action='append', required=True, type=str,
+                        help='List with input sequencing signals as a relative path to your current directory.')
+    parser.add_argument('--name', '-n', action='append', type=str,
+                        help='Names of the data sets')
+    parser.add_argument('--norm', type=str,
+                        help='The applied normalisation method. If parameter is not passed, no normalisation is'
+                             'applied. Otherwise choose between remap and center. Remap scales data between 0 and 1,'
+                             'with 1 being the maximum and 0 the minimum. Center shifts the mean to 0 and sets'
+                             'std to 1.')
+    parser.add_argument('--bed', type=str,
+                        help='If passed, data is partitioned according to bed file definitions.')
+    parser.add_argument('--smoothing', action='append', type=int,
+                        help='Smoothing values')
+    parser.add_argument('--thresh', type=float,
+                        help='Ratio of data that must not exceed a certain distance distance to the reference signal '
+                             'that is at least required to treat them as being essentially the same.')
+    parser.add_argument('--save_plot', dest='save_plot', action='store_true',
+                        help='Should the plots be saved?')
+    parser.add_argument('--save_prefix', type=str,
+                        help='Prefix that is added to every saved plot to give them certain identifiers.')
+    parser.add_argument('--num_lags', type=int,
+                        help='Maximal number of values that the signal is shifted for the MSE')
+    parser.add_argument('--num_bins', type=int,
+                        help='Number of bins used for the KS-test. If no parameter is passed, the data is binned'
+                             'according to the doane method (see numpy documentation).')
 
     parsed_args = parser.parse_args(args)
     return parsed_args
@@ -71,7 +78,7 @@ def cross_corr(x, y, num_lags):
 def kolmogorow_smirnow(x, y, binning=10):
     if binning is None:
         _, binning = np.histogram(x, bins='doane')
-    if type(binning) == int:
+    if isinstance(binning, int) or isinstance(binning, np.integer):
         _, binning = np.histogram(x, bins=binning)
 
     b_x = np.digitize(x, bins=binning)
@@ -80,6 +87,22 @@ def kolmogorow_smirnow(x, y, binning=10):
     cdf_y = stats.norm.cdf(b_y)
 
     return stats.ks_2samp(cdf_x, cdf_y)
+
+
+def parallel_diff(x, y):
+    return np.abs(x - y)
+
+
+def parallel_thresh(x, theta):
+    return (np.asarray(x) < theta).sum() / float(len(x))
+
+
+def parallel_mse(x, y, num_lags):
+    return cross_mse(x, y, num_lags=num_lags)
+
+
+def parallel_ks(x, y, num_bins):
+    return kolmogorow_smirnow(np.asarray(x), np.asarray(y), binning=num_bins)[1]
 
 
 def main():
@@ -94,6 +117,7 @@ def main():
     save_plots = False if arguments.save_plot is None else arguments.save_plot
     save_prefix = '' if arguments.save_prefix is None else arguments.save_prefix
     names = list(range(len(arguments.input_data))) if arguments.name is None else arguments.name
+    bed = arguments.bed
     normalisation = arguments.norm
     num_bins = arguments.num_bins
 
@@ -105,6 +129,9 @@ def main():
                 rel_path=''
             )
         )
+
+    if bed:
+        bed = reader.load_bam_bed_file(bed, rel_path='', is_abs_path=True)
 
     print('########### Applied normalisation method: %s' % normalisation)
     all_values, chrom_start = seqDataHandler.get_values(bw_list=bw_files)
@@ -122,6 +149,19 @@ def main():
         print('########### Apply smoothing')
         all_values = seqDataHandler.smooth_all(all_values, smooth_list=smoothing)
 
+    if bed:
+        print('########### Segment data according to bed file')
+        all_values, _ = seqDataHandler.annotate_all(all_values, bed_ref=bed, chrom_start=chrom_start)
+        max_len = len(sorted(all_values[0], reverse=True, key=len)[0])
+        for i in range(len(all_values[0])):
+            len_diff = max_len - len(all_values[0][i])
+            rp = len_diff // 2
+            lp = len_diff - rp
+            for sig in range(len(all_values)):
+                all_values[sig][i] = np.pad(all_values[sig][i], (lp, rp), 'constant', constant_values=0)
+    else:
+        all_values = [all_values[i][np.newaxis, ...] for i in range(len(all_values))]
+
     thresh_list = []
     mse_list = []
     mse_centre_list = []
@@ -130,25 +170,67 @@ def main():
     print('########### Number of lags used: %s' % num_lags)
     print('########### Used threshold: %s' % thresh)
     print('########### Number of bins or binning method: %s' % (num_bins if num_bins is not None else'doane'))
+    print('########### Calculate similarity')
     prod = list(combinations(range(len(all_values)), 2))
-    for org, refer in prod:
-        diff = np.abs(all_values[org] - all_values[refer])
-        thresh_list.append([(np.asarray(diff) < theta).sum() / float(len(diff)) for theta in np.arange(0, 1, step)])
-        mse = cross_mse(all_values[org], all_values[refer], num_lags=num_lags)
-        mse_list.append(mse)
-        d, p = kolmogorow_smirnow(all_values[org], all_values[refer], binning=num_bins)
-        ks_list.append(p)
-        mse_centre_list.append(mse[num_lags])
+    thresh_steps = np.arange(0, 1, step)
+    with multiprocessing.Pool(np.maximum(multiprocessing.cpu_count() - 1, 0)) as parallel:
+        for num, (org, refer) in enumerate(prod):
+            print_status(100 * (num / float(len(prod))))
+            diff = parallel.starmap(parallel_diff, zip(all_values[org], all_values[refer]))
+            thresh_pair = []
+            for d in diff:
+                thresh_pair.append(parallel.starmap(
+                    parallel_thresh,
+                    zip(np.repeat(d, thresh_steps.size).reshape((d.size, thresh_steps.size)), thresh_steps)
+                ))
+            thresh_list.append(thresh_pair)
+            mse_pair = parallel.starmap(
+                parallel_mse,
+                zip(all_values[org], all_values[refer], np.repeat(num_lags, len(all_values[org])))
+            )
+            mse_list.append(mse_pair)
+            ks_pair = parallel.starmap(
+                parallel_ks,
+                zip(all_values[org], all_values[refer], np.repeat(num_bins, len(all_values[org])))
+            )
+            ks_list.append(ks_pair)
+            mse_centre_list.append([mse_pair[i][num_lags] for i in range(len(all_values[org]))])
 
+    print_status(100)
     fig_diff, ax_diff = plt.subplots(figsize=(10, 5))
     fig_mse, ax_mse = plt.subplots(figsize=(10, 5))
+
     for diff_thresh, mse, (org, ref) in zip(thresh_list, mse_list, prod):
-        ax_diff.plot(np.arange(0, 1, step), diff_thresh, label='Comparison\n%s, %s' % (names[org], names[ref]))
-        ax_mse.plot(np.arange(-len(mse)/2., len(mse)/2.), mse, label='Comparison\n%s, %s' % (names[org], names[ref]))
+        line = ax_diff.plot(
+            thresh_steps,
+            np.mean(diff_thresh, axis=0),
+            label='Comparison\n%s, %s' % (names[org], names[ref])
+        )
+        ax_diff.fill_between(
+            thresh_steps,
+            np.maximum(np.mean(diff_thresh, axis=0) - np.std(diff_thresh, axis=0), 0),
+            np.mean(diff_thresh, axis=0) + np.std(diff_thresh, axis=0),
+            color=line[0].get_color(),
+            alpha=.2
+        )
+
+        ax_mse.plot(
+            np.arange(-len(mse[0])/2., len(mse[0])/2.),
+            np.mean(mse, axis=0),
+            label='Comparison\n%s, %s' % (names[org], names[ref]),
+            color=line[0].get_color()
+        )
+        ax_mse.fill_between(
+            np.arange(-len(mse[0]) / 2., len(mse[0]) / 2.),
+            np.maximum(np.mean(mse, axis=0) - np.std(mse, axis=0), 0),
+            np.mean(mse, axis=0) + np.std(mse, axis=0),
+            color=line[0].get_color(),
+            alpha=.2
+        )
 
     ax_diff.plot(
         np.arange(0, 1, step),
-        np.repeat(thresh, len(thresh_list[0])),
+        np.repeat(thresh, np.arange(0, 1, step).size),
         label='Minimum similarity'
     )
     ax_diff.set_title('Ratio of the data that differs maximal by $\\theta$')
@@ -169,9 +251,12 @@ def main():
 
     fig_heat, ax_heat = plt.subplots()
     heatmap = np.zeros((len(all_values), len(all_values)))
+    heatmap_idx = np.zeros((len(all_values), len(all_values)))
     mask_tri = np.triu(np.ones(heatmap.shape, dtype=bool))
-    heatmap[np.logical_and(mask_tri, ~np.eye(heatmap.shape[0], dtype=bool))] = np.asarray(ks_list)
-    heatmap.T[np.logical_and(mask_tri, ~np.eye(heatmap.shape[0], dtype=bool))] = np.asarray(ks_list)
+    heatmap[np.logical_and(mask_tri, ~np.eye(heatmap.shape[0], dtype=bool))] = np.mean(ks_list, axis=1)
+    heatmap_idx[np.logical_and(mask_tri, ~np.eye(heatmap.shape[0], dtype=bool))] = np.arange(len(ks_list))
+    heatmap.T[np.logical_and(mask_tri, ~np.eye(heatmap.shape[0], dtype=bool))] = np.mean(ks_list, axis=1)
+    heatmap_idx.T[np.logical_and(mask_tri, ~np.eye(heatmap.shape[0], dtype=bool))] = np.arange(len(ks_list))
     heat_plt = ax_heat.imshow(heatmap, cmap='seismic')
     ax_heat.set_xticks(np.arange(len(names)))
     ax_heat.set_yticks(np.arange(len(names)))
@@ -181,7 +266,9 @@ def main():
     plt.setp(ax_heat.get_xticklabels(), rotation=45, ha='right', rotation_mode='anchor')
 
     for r, c in product(range(heatmap.shape[0]), range(heatmap.shape[1])):
-        text = ax_heat.text(r, c, '%.2f' % heatmap[r, c], ha='center', va='center', color='w')
+        ks_values = ks_list[int(heatmap_idx[r, c])]
+        text = '%.2f\n(+-%.2f)' % (heatmap[r, c], 0.0 if r == c else np.std(ks_values))
+        ax_heat.text(r, c, text, ha='center', va='center', color='w')
 
     ax_heat.set_title('KS p-value Heatmap')
     fig_heat.tight_layout()
