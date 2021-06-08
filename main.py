@@ -1,4 +1,14 @@
 #!/usr/bin/python3
+"""Chromosomal Data Comparison
+
+This script provides a command line interface to compare sequencing data. It combines a variety of different tools,
+inter alia mean-squared with a lag function, cross correlation, and Kolmogorov-Smirnow.
+Run
+```
+python3 main.py --help
+```
+to print all the command line options.
+"""
 import os
 import sys
 import argparse
@@ -13,12 +23,24 @@ from datahandler import reader, seqDataHandler
 
 
 def print_status(per):
+    """
+    Print process bar
+    :param per: Percent
+    :type per: float
+    :return: None
+    """
     sys.stdout.write('\r')
     sys.stdout.write("[%-100s] %d%%" % ('=' * int(per), per))
     sys.stdout.flush()
 
 
 def arg_parse(args):
+    """
+    Parse command line arguments
+    :param args: Argument list
+    :type args: list
+    :return: Parsed argiments
+    """
     parser = argparse.ArgumentParser(description='Pass parameters for comparing 2 or more'
                                                  ' sequencing data sets with each other.')
     parser.add_argument('--input_data', '-i', action='append', required=True, type=str,
@@ -52,6 +74,17 @@ def arg_parse(args):
 
 
 def cross_mse(x, y, num_lags):
+    """
+    Mean-squared error with a lag function
+    :param x: Data array 1
+    :type x: numpy.array
+    :param y: Data array 2
+    :type y: numpy.array
+    :param num_lags: Number of lags to the left and right that are to be plotted
+    :type num_lags: int
+    :return: Array with the mean-squared error sorted from the smallest lag (i.e. -num_lags) to the larges lag
+    (i.e. num_lags)
+    """
     mse = np.zeros(2 * num_lags + 1)
     error = (x - y)
     mse[num_lags] = error.dot(error) / float(error.size)
@@ -65,6 +98,17 @@ def cross_mse(x, y, num_lags):
 
 
 def cross_corr(x, y, num_lags):
+    """
+    Calculate the linear cross correlation
+    :param x: Data array 1
+    :type x: numpy.array
+    :param y: Data array 2
+    :type y: numpy.array
+    :param num_lags: Number of lags to the left and right that are to be plotted
+    :type num_lags: int
+    :return: Array with the linear cross correlation sorted from the smallest lag (i.e. -num_lags) to the larges lag
+    (i.e. num_lags)
+    """
     corr = np.zeros(2 * num_lags + 1)
     norm_quot = np.square(np.square(x)).sum() * np.square(np.square(y).sum())
     corr[num_lags] = x.dot(y) / norm_quot
@@ -76,6 +120,16 @@ def cross_corr(x, y, num_lags):
 
 
 def kolmogorow_smirnow(x, y, binning=10):
+    """
+    Calculate Kolmogorow-Smirnow test
+    :param x: Data array 1
+    :type x: numpy.array
+    :param y: Data array 2
+    :type y: numpy.array
+    :param binning: Number of bins
+    :type binning: int or str
+    :return: Largest distance between the cumulative distribution functions, p-value
+    """
     if binning is None:
         _, binning = np.histogram(x, bins='doane')
     if isinstance(binning, int) or isinstance(binning, np.integer):
@@ -90,22 +144,62 @@ def kolmogorow_smirnow(x, y, binning=10):
 
 
 def parallel_diff(x, y):
+    """
+    Wrapper function for running absolute distance calculation in parallel
+    :param x: Data array 1
+    :type x: numpy.array
+    :param y: Data array 2
+    :type y: numpy.array
+    :return: Array with absolute distance
+    """
     return np.abs(x - y)
 
 
 def parallel_thresh(x, theta):
+    """
+    Wrapper function for running thresholding in parallel. Determine the ratio of values that is below the threshold.
+    :param x: Data array
+    :type x: numpy.array
+    :param theta: threshold value
+    :type theta: float
+    :return: Ratio of values lower than the ratio
+    """
     return (np.asarray(x) < theta).sum() / float(len(x))
 
 
 def parallel_mse(x, y, num_lags):
+    """
+    Wrapper function for running mean-squared error calculations in parallel
+    :param x: Data array 1
+    :type x: numpy.array
+    :param y: Data array 2
+    :type y: numpy.array
+    :param num_lags: Number of shifts to the left and the right
+    :type num_lags: int
+    :return: Mean-squared error with lag function (see docstring  of cross_mse)
+    """
     return cross_mse(x, y, num_lags=num_lags)
 
 
 def parallel_ks(x, y, num_bins):
+    """
+    Wrapper function for running KS-Test in parallel
+    :param x: Data array 1
+    :type x: numpy.array
+    :param y: Data array 2
+    :type y: numpy.array
+    :param num_bins: Number of bins
+    :type num_bins: int or str
+    :return: p-value
+    """
     return kolmogorow_smirnow(np.asarray(x), np.asarray(y), binning=num_bins)[1]
 
 
 def main():
+    """
+    Main function which is executed through the command line interface
+    :return: None
+    """
     arguments = arg_parse(sys.argv[1:])
 
     step = 0.01
