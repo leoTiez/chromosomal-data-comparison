@@ -13,6 +13,7 @@ import os
 import sys
 import argparse
 import multiprocessing
+from pathlib import Path
 
 from itertools import combinations, product
 import numpy as np
@@ -20,6 +21,18 @@ from scipy import stats
 import matplotlib.pyplot as plt
 
 from datahandler import reader, seqDataHandler
+
+
+def validate_dir(rel_path=''):
+    """
+    Validate whether path exists and creates folders if necessary
+    :param rel_path: Relative path from current directory to target directory
+    :type rel_path: str
+    :return: Absolute path string to directory
+    """
+    curr_dir = os.getcwd()
+    Path('%s/%s/' % (curr_dir, rel_path)).mkdir(parents=True, exist_ok=True)
+    return '%s/%s/' % (curr_dir, rel_path)
 
 
 def print_status(per):
@@ -208,6 +221,9 @@ def main():
     thresh = 0.9 if arguments.thresh is None else arguments.thresh
     smoothing = [None if x == 'None' else int(x) for x in arguments.smoothing] \
         if arguments.smoothing is not None else None
+    if smoothing is not None:
+        if len(smoothing) == 1:
+            smoothing = smoothing[0]
     save_plots = False if arguments.save_plot is None else arguments.save_plot
     save_prefix = '' if arguments.save_prefix is None else arguments.save_prefix
     names = list(range(len(arguments.input_data))) if arguments.name is None else arguments.name
@@ -220,7 +236,8 @@ def main():
         bw_files.append(
             reader.load_big_file(
                 name=file_path,
-                rel_path=''
+                rel_path='',
+                is_abs_path=True
             )
         )
 
@@ -351,7 +368,9 @@ def main():
     heatmap_idx[np.logical_and(mask_tri, ~np.eye(heatmap.shape[0], dtype=bool))] = np.arange(len(ks_list))
     heatmap.T[np.logical_and(mask_tri, ~np.eye(heatmap.shape[0], dtype=bool))] = np.mean(ks_list, axis=1)
     heatmap_idx.T[np.logical_and(mask_tri, ~np.eye(heatmap.shape[0], dtype=bool))] = np.arange(len(ks_list))
-    heat_plt = ax_heat.imshow(heatmap, cmap='seismic')
+    heatmap[np.eye(heatmap.shape[0], dtype=bool)] = -1
+
+    heat_plt = ax_heat.imshow(heatmap, cmap='brg', vmin=-1, vmax=1)
     ax_heat.set_xticks(np.arange(len(names)))
     ax_heat.set_yticks(np.arange(len(names)))
     ax_heat.set_xticklabels(names)
@@ -360,6 +379,8 @@ def main():
     plt.setp(ax_heat.get_xticklabels(), rotation=45, ha='right', rotation_mode='anchor')
 
     for r, c in product(range(heatmap.shape[0]), range(heatmap.shape[1])):
+        if r == c:
+            continue
         ks_values = ks_list[int(heatmap_idx[r, c])]
         text = '%.2f\n(+-%.2f)' % (heatmap[r, c], 0.0 if r == c else np.std(ks_values))
         ax_heat.text(r, c, text, ha='center', va='center', color='w')
@@ -370,10 +391,10 @@ def main():
     if not save_plots:
         plt.show()
     else:
-        curr_dir = os.getcwd()
-        fig_diff.savefig('%s/%s_diff.png' % (curr_dir, save_prefix))
-        fig_mse.savefig('%s/%s_mse.png' % (curr_dir, save_prefix))
-        fig_heat.savefig('%s/%s_heat.png' % (curr_dir, save_prefix))
+        directory = validate_dir('plots')
+        fig_diff.savefig('%s/%s_diff.png' % (directory, save_prefix))
+        fig_mse.savefig('%s/%s_mse.png' % (directory, save_prefix))
+        fig_heat.savefig('%s/%s_heat.png' % (directory, save_prefix))
         plt.clf()
 
 
